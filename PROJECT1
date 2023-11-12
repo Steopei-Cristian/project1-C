@@ -1,0 +1,895 @@
+#include <gtk/gtk.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+// length of Transactions (all transactions)
+int len = 0;
+
+// names for each column in the transaction table
+char cols[6][105];
+void init_cols(){
+  strcpy(cols[0], "ID");
+  strcpy(cols[1], "User_ID");
+  strcpy(cols[2], "Date");
+  strcpy(cols[3], "Description");
+  strcpy(cols[4], "Ammount ($)");
+  strcpy(cols[5], "Type");
+}
+
+// Transaction datatype
+struct Transaction{
+    int Id;
+    int User_id;
+
+    int Day;
+    int Month;
+    int Year;
+  
+    char Description[250];
+  
+    float Ammount;
+    int Type; // 1 -> in, 0 -> out
+    
+} Transactions[101];
+
+// a kind of constructor :)
+struct Transaction create_Transaction(
+    int id, int user_id,
+    int day, int month, int year, 
+    char description[], 
+    float ammount, int type){
+
+        struct Transaction tr;
+        
+        tr.Id = id;
+        tr.User_id = user_id;
+
+        tr.Day = day;
+        tr.Month = month;
+        tr.Year = year;
+
+        strcpy(tr.Description, description);
+
+        tr.Ammount = ammount;
+        tr.Type = type;
+
+        return tr;
+}
+
+// self-implemented itoa function (no idea why the predefined one doesn't work)
+char* itoa(int nr, char *str){
+  if(str == NULL)
+    return NULL;
+    
+  sprintf(str, "%d", nr);  
+  return str;
+}
+
+// self-implemented ftoa function (no idea why the predefined one doesn't work)
+char* ftoa(float nr, char *str){
+  if(str == NULL)
+    return NULL;
+    
+  sprintf(str, "%.2f", nr);  
+  return str;
+}
+
+// merges the Day, Month and Year fields (int) into a string (easier to print) 
+void get_date_str(int day, int month, int year, char date[25]){
+    strcpy(date, "");
+    char val_str[5];
+    
+    strcpy(date, itoa(day, val_str));
+    strcat(date, ".");
+    strcat(date, itoa(month, val_str));
+    strcat(date, ".");
+    strcat(date, itoa(year, val_str));
+}
+
+// getters
+int get_ID(struct Transaction tr){
+  return tr.Id;
+}
+int get_User_Id(struct Transaction tr){
+  return tr.User_id;
+}
+int get_Day(struct Transaction tr){
+  return tr.Day;
+}
+int get_Month(struct Transaction tr){
+  return tr.Month;
+}
+int get_Year(struct Transaction tr){
+  return tr.Year;
+}
+const char* get_Description(struct Transaction tr){
+  const char* res = tr.Description;
+  return res;
+}
+float get_Ammount(struct Transaction tr){
+  return tr.Ammount;
+}
+int get_Type(struct Transaction tr){
+  return tr.Type;
+}
+
+// setters
+void set_ID(struct Transaction *tr, int id){
+    tr->Id = id;
+}
+void set_User_Id(struct Transaction *tr, int user_id){
+    tr->User_id = user_id;
+}
+void set_Day(struct Transaction *tr, int day){
+    tr->Day = day;
+}
+void set_Month(struct Transaction *tr, int month){
+    tr->Month = month;
+}
+void set_Year(struct Transaction *tr, int year){
+    tr->Year = year;
+}
+void set_Desc(struct Transaction *tr, char desc[250]){
+    strcpy(tr->Description, desc);
+}
+void set_Ammount(struct Transaction *tr, float ammount){
+    tr->Ammount = ammount;
+}
+void set_Type(struct Transaction *tr, int type){
+    tr->Type = type;
+}
+
+// demo function for printing a transaction
+void print_Transaction(struct Transaction tr){
+    printf("\nTransaction ID: %d\n", tr.Id);
+    printf("%s\n", tr.Description);
+    printf("%f\n", tr.Ammount);
+}
+
+// adds a given transaction to a transaction list
+void add_transaction(
+    struct Transaction *transactions,
+    struct Transaction transaction){
+    
+    transactions[++len] = transaction;
+}
+
+// gets a Transaction object from file input ("ID|User_Id|Day|....|Type|)
+struct Transaction get_from_str(char tr_str[250]){
+    int k = 0, ct = 0;
+    char current[250];
+
+    struct Transaction res;
+
+    for(int i = 0; tr_str[i]; i++){
+        if(tr_str[i] == '|'){
+            ct++;
+            current[k] = '\0';
+            if(ct != 6 && ct != 7){
+                int val = atoi(current);
+                if(ct == 1)
+                    set_ID(&res, val);
+                else if(ct == 2)
+                    set_User_Id(&res, val);
+                else if(ct == 3)
+                    set_Day(&res, val);
+                else if(ct == 4)
+                    set_Month(&res, val);
+                else if(ct == 5)
+                    set_Year(&res, val);
+                else if(ct == 8)
+                    set_Type(&res, val);
+            }
+            else if(ct == 6)
+                set_Desc(&res, current);
+            else if(ct == 7){
+                float ammount = atof(current);
+                set_Ammount(&res, ammount);
+            }
+            k = 0;
+            strcpy(current, "");
+        }
+        else{
+            current[k++] = tr_str[i];
+        }
+    }
+
+    return res;
+}
+
+// loads all transactions from the "database" - text file :)
+void load(){
+    FILE *fin;
+    fin = fopen("/home/cristi1/project1_gtk/transactions.txt", "r");
+    char transaction_str[250];
+
+    while(fgets(transaction_str, 250, fin)){
+    	// printf("%s\n", transaction_str);
+        struct Transaction tr = get_from_str(transaction_str);
+        add_transaction(Transactions, tr);
+    }
+    
+    fclose(fin);
+}
+
+// columns enum for TreeView
+enum {
+  COLUMN_ID = 0,
+  COLUMN_USER_ID,
+  COLUMN_DATE,
+  COLUMN_DESCRIPTION,
+  COLUMN_AMMOUNT,
+  COLUMN_TYPE,
+  NUM_COLUMNS
+};
+
+// creates a treeview inside of a grid
+GtkWidget* load_transaction_list(GtkWidget *container, struct Transaction *tr_list, 
+  int d, int line){
+  // create column list
+  GtkListStore *liststore;
+  liststore = gtk_list_store_new(NUM_COLUMNS, G_TYPE_INT, 
+  	G_TYPE_INT, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+  	
+  GtkTreeIter iter;
+  for(int i = 1; i<=d; i++){
+    
+    // get date string from Day, Month, Year fields of Transactions[i]
+    char date[25];
+    strcpy(date, "");
+    get_date_str(tr_list[i].Day, tr_list[i].Month, tr_list[i].Year, date);
+    
+    // get transaction ammount with 2 decimal places + $ sign
+    char ammount[25];
+    strcpy(ammount, "");
+    sprintf(ammount, "%.2f", tr_list[i].Ammount);
+    strcat(ammount, " $");
+    
+    // construct new row for each column
+    gtk_list_store_append(liststore, &iter);
+    gtk_list_store_set(liststore, &iter,
+    	COLUMN_ID, tr_list[i].Id,
+    	COLUMN_USER_ID, tr_list[i].User_id,
+ 	COLUMN_DATE, date, 
+    	COLUMN_DESCRIPTION, tr_list[i].Description,
+    	COLUMN_AMMOUNT, ammount,
+    	COLUMN_TYPE, (tr_list[i].Type ? "In" : "Out"),
+    	-1);
+  }
+  
+  // create TreeView table
+  GtkWidget *treeview = gtk_tree_view_new_with_model(GTK_TREE_MODEL(liststore));
+  gtk_grid_attach(GTK_GRID(container), treeview, 1, line, 1, 1);
+  
+  // get name for each column
+  init_cols();
+  
+  for(int i = 0; i < NUM_COLUMNS; i++){
+  
+    // render every column
+    GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+    GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes(cols[i],
+    	renderer, "text", i, NULL);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(treeview), column); 
+  }
+  
+  // add empty label to grid (for spacing)
+  GtkWidget *l1;
+  l1 = gtk_label_new("");
+  gtk_grid_attach(GTK_GRID(container), l1, 1, line + 1, 1, 1);
+  
+  return treeview;
+}
+
+// loads the TreeView
+GtkWidget* load_transaction_table(GtkWidget *container){
+  // get transactions from "database"
+  load();
+  return load_transaction_list(container, Transactions, len, 1);
+}
+
+// i think this one is pretty clear
+void transaction_to_string(struct Transaction transaction, char desc[350]){
+  strcpy(desc, "");
+  char temp[25];
+  
+  strcat(desc, itoa(get_ID(transaction), temp));
+  strcat(desc, "|"); 
+  strcat(desc, itoa(get_User_Id(transaction), temp));
+  strcat(desc, "|");
+  strcat(desc, itoa(get_Day(transaction), temp));
+  strcat(desc, "|");
+  strcat(desc, itoa(get_Month(transaction), temp));
+  strcat(desc, "|"); 
+  strcat(desc, itoa(get_Year(transaction), temp));
+  strcat(desc, "|"); 
+  
+  const char *d1 = get_Description(transaction);
+  strcat(desc, d1);
+  strcat(desc, "|");
+  
+  strcat(desc, ftoa(get_Ammount(transaction), temp));
+  strcat(desc, "|"); 
+  strcat(desc, itoa(get_Type(transaction), temp));
+  strcat(desc, "|"); 
+}
+
+// opens the "database" file in append mode and adds a new row to the file (to_string(transaction)
+void append_transaction_to_file(struct Transaction transaction){
+  FILE *fin;
+  fin = fopen("/home/cristi1/project1_gtk/transactions.txt", "a");
+  
+  char desc[500];
+  transaction_to_string(transaction, desc);
+  fprintf(fin, "%s\n", desc);
+  
+  fclose(fin);
+}
+
+// test for the above function
+void test_append_to_file(){
+  struct Transaction tr = create_Transaction(len+1, 1, 24, 10, 2023, "test1", 30.21, 0);
+  append_transaction_to_file(tr);
+}
+
+#define ENTRIES_LEN 3
+#define R_BUTTONS_LEN 2
+#define BUTTONS_LEN 2
+
+// user input entries (in grid)
+void init_entries_grid(GtkWidget *grid, gpointer data){
+  gtk_widget_set_halign(grid, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(grid, GTK_ALIGN_CENTER);
+  gtk_widget_set_margin_top(grid, 100);
+  
+  char placeholders[ENTRIES_LEN][50];
+  strcpy(placeholders[0], "Date (dd.mm.yyyy)");
+  strcpy(placeholders[1], "Description");
+  strcpy(placeholders[2], "Ammount ($)");
+  
+  // create, set and add to grid input entries
+  GtkWidget **entries = (GtkWidget **)data;
+  for(int i = 0; i < ENTRIES_LEN; i++){
+    entries[i] = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entries[i]), placeholders[i]);
+    gtk_grid_attach(GTK_GRID(grid), entries[i], 1, i + 2, 1, 1);
+  }
+}
+
+// radio buttons
+void init_radio_btns(GtkWidget* radio_btn_box, gpointer data){
+  // create in/out radio buttons (transaction type) + make them relative to each other
+  gtk_widget_set_halign(radio_btn_box, GTK_ALIGN_CENTER);
+  GSList *radio_btns = NULL;
+  
+  char labels[R_BUTTONS_LEN][25];
+  strcpy(labels[0], "In-transaction");
+  strcpy(labels[1], "Out-transaction");
+  
+  GtkWidget **r_buttons = (GtkWidget **)data;
+  for(int i = 0; i < R_BUTTONS_LEN; i++){
+    r_buttons[i] = gtk_radio_button_new_with_label(radio_btns, labels[i]);
+    radio_btns = gtk_radio_button_get_group(GTK_RADIO_BUTTON(r_buttons[i]));
+    gtk_container_add(GTK_CONTAINER(radio_btn_box), r_buttons[i]);
+  }
+}
+
+int is_digit(char c){
+  return (c >= '0' && c <= '9');
+}
+
+// data validation for date user entry
+int is_date(char* text){
+  int ct_p = 0, k = 0;
+  char current[20];
+  for(int i = 0; text[i]; i++){
+    if(is_digit(text[i]))
+      current[k++] = text[i];
+    else if(text[i] == '.'){
+      ct_p++;
+      if(ct_p > 2)
+      	return 0;
+      if(k > 2)
+        return 0;
+      else{
+        current[k] = '\0';
+        int val = atoi(current);
+        if(ct_p == 1 && (val < 1 || val > 31)) // day
+           return 0;
+        if(ct_p == 2 && (val < 1 || val > 12)) // month
+          return 0;
+        k = 0;
+        strcpy(current, "");
+      }
+    }
+    else
+      return 0;
+  }
+  return (ct_p == 2 && k == 4 && current[0] != '0');
+}
+
+// data validation for ammount user entry
+int is_float(char *text){
+  int ct_p = 0;
+  if(!strlen(text) || !is_digit(text[0]))
+    return 0;
+  for(int i = 0; text[i]; i++){
+    if(text[i] == '.'){
+      ct_p++;
+      if(ct_p > 1)
+        return 0;
+    }
+    else if(!is_digit(text[i]))
+      return 0;
+  }
+  return 1;
+}
+
+// changes forecolor of given entry (for visual data validation)
+void change_fore_color(GtkEntry *entry, int *rgb){
+  // create attribute list
+  PangoAttrList *attr_list = pango_attr_list_new();
+  PangoAttribute *color_attr = pango_attr_foreground_new(rgb[0], rgb[1], rgb[2]);
+  pango_attr_list_insert(attr_list, color_attr);
+
+  // set the text attributes for the entry
+  gtk_entry_set_attributes(entry, attr_list);
+
+  // free the attribute list (it will be copied internally)
+  pango_attr_list_unref(attr_list); 
+}
+
+// separates dd.mm.yyy string in an array of 3 integers (day, month, year fields)
+void get_date_from_string(char *text, int data[3]){
+  int ct_p = 0, k = 0;
+  char current[20];
+  for(int i = 0; text[i]; i++){
+    if(is_digit(text[i]))
+      current[k++] = text[i];
+    else if(text[i] == '.'){
+      current[k] = '\0';
+      int val = atoi(current);
+      data[ct_p] = val;
+      ct_p++;
+      k = 0;
+      strcpy(current, "");
+    }
+  }
+  current[k] = '\0';
+  int year = atoi(current);
+  data[ct_p] = year;
+}
+
+// returns index of active radio button in list
+int get_active_rbutton(gpointer data, int len){
+  GtkWidget **r_buttons = (GtkWidget **)data;
+  for(int i = 0; i < len; i++)
+    if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(r_buttons[i])))
+      return i;
+  return -1;
+}
+
+// validates data for each user entry (both visually and computationally)
+// if all entries are OK, returns the correspondent fields 
+int get_entries_data(gpointer data, char date[20], char description[250], char ammount[25]){
+  GtkEntry **entries = (GtkEntry **)data;
+  
+  const gchar *text = gtk_entry_get_text(entries[0]);
+  char* text_date = g_strdup(text);
+  int ok_date = is_date(text_date);
+  if(!ok_date){
+    int rgb[3] = {65535, 0, 0};
+    change_fore_color(entries[0], rgb);
+  }
+  else{
+    int rgb[3] = {0, 65535, 0};
+    change_fore_color(entries[0], rgb);
+  }
+  
+  text = gtk_entry_get_text(entries[1]);
+  char* text_desc = g_strdup(text);
+  int ok_desc = (strlen(text) > 0 && strlen(text) <= 250);
+  if(!ok_desc){
+    int rgb[3] = {65535, 0, 0};
+    change_fore_color(entries[1], rgb);
+  }
+  else{
+    int rgb[3] = {0, 65535, 0};
+    change_fore_color(entries[1], rgb);
+  }
+  
+  text = gtk_entry_get_text(entries[2]);
+  char* text_ammount = g_strdup(text);
+  int ok_ammount = is_float(text_ammount);
+  if(!ok_ammount){
+    int rgb[3] = {65535, 0, 0};
+    change_fore_color(entries[2], rgb);
+  }
+  else{
+    int rgb[3] = {0, 65535, 0};
+    change_fore_color(entries[2], rgb);
+  }
+  
+  if(ok_date && ok_desc && ok_ammount){
+    strcpy(date, text_date);
+    strcpy(description, text_desc);
+    strcpy(ammount, text_ammount);
+    return 1;
+  }
+  
+  return 0;
+}
+
+// data structure for submit_clicked event
+struct Submit_ClickData{
+  gpointer data1; // entries list
+  gpointer data2; // radio buttons list
+  gpointer data3; // treeView
+  gpointer data4; // dialog to close
+};
+
+//submit _clicked event
+void submit_clicked(GtkButton *button, gpointer data){
+  struct Submit_ClickData *click = (struct Submit_ClickData *)data;
+
+  // get Day, Month, Year fields from entries
+  char date[20], desc[250], ammount[50];
+  int nums[3] = {0, 0, 0};
+  int ok = get_entries_data(click->data1, date, desc, ammount);
+  
+  if(!ok)
+    return;
+  
+  get_date_from_string(date, nums);
+  
+  // get active radio button (for type)  
+  int r_btn = get_active_rbutton(click->data2, R_BUTTONS_LEN);
+  int type = (r_btn == 0 ? 1 : 0);
+  
+  // build new transaction object and add it to the "database"
+  struct Transaction tr = create_Transaction(
+      len+1, 1, // id, user_id
+      nums[0], nums[1], nums[2], // day, month, year
+      desc, // description
+      atof(ammount), // ammount 
+      type); // type (1 -> in, 0 -> out)
+  append_transaction_to_file(tr);
+  
+  // refresh the transaction table
+  GtkTreeView *tr_table = GTK_TREE_VIEW(click->data3);
+  GtkTreeModel *model = gtk_tree_view_get_model(tr_table);
+  GtkTreeIter iter;
+  gtk_list_store_append(GTK_LIST_STORE(model), &iter);
+  
+  char ammount_str[25];
+  sprintf(ammount_str, "%.2f", atof(ammount));
+  strcat(ammount_str, " $");
+  
+  gtk_list_store_set(GTK_LIST_STORE(model), &iter,
+    	COLUMN_ID, tr.Id,
+    	COLUMN_USER_ID, tr.User_id,
+ 	COLUMN_DATE, date, 
+    	COLUMN_DESCRIPTION, tr.Description,
+    	COLUMN_AMMOUNT, ammount_str,
+    	COLUMN_TYPE, (tr.Type ? "In" : "Out"),
+    	-1);
+  
+    	
+  // close the add_transaction dialog
+  gtk_widget_destroy(GTK_WIDGET(click->data4));
+}
+
+// cancel_clicked event
+void cancel_clicked(GtkWidget *button, gpointer data){
+  gtk_widget_destroy(GTK_WIDGET(data));
+}
+
+// init Cancel and Submit buttons
+void init_add_dialog_btns(GtkWidget *button_box, gpointer data){
+  gtk_widget_set_halign(button_box, GTK_ALIGN_CENTER);
+  gtk_widget_set_margin_top(button_box, 50);
+  
+  char labels[BUTTONS_LEN][25];
+  strcpy(labels[0], "Submit");
+  strcpy(labels[1], "Cancel");
+  
+  // create the submit and cancel buttons and add them to a button box
+  GtkWidget **buttons = (GtkWidget **)data;
+  for(int i = 0; i < BUTTONS_LEN; i++){
+    buttons[i] = gtk_button_new_with_label(labels[i]);
+    gtk_widget_set_size_request(GTK_WIDGET(buttons[i]), 75, 50);
+    gtk_container_add(GTK_CONTAINER(button_box), buttons[i]);
+  }
+}
+
+// data structure for passing the main window and tr_table to the add_transaction_dialog
+struct Window_Table_ClickData{
+  gpointer data1; // window
+  gpointer data2; // transaction table 
+};
+
+// init a dialog
+GtkWidget* init_dialog(gpointer data){
+  GtkWidget *window = GTK_WIDGET(data);
+  
+  GtkWidget* dialog = gtk_dialog_new();
+  gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
+  gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+  gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 400);
+  gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
+  gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
+  
+  return dialog;
+}
+
+// dialog for user input
+void open_transaction_add_dialog(GtkWidget *widget, gpointer data){
+  struct Window_Table_ClickData *add_click_data = (struct Window_Table_ClickData *)data;
+  
+  // get window parent
+  GtkWidget *window = GTK_WIDGET(add_click_data->data1);
+  
+  // initialize the input dialog
+  GtkWidget *input_dialog = init_dialog(add_click_data->data1);
+  gtk_window_set_title(GTK_WINDOW(input_dialog), "Input Transaction Dialog");
+  gtk_window_set_default_size(GTK_WINDOW(input_dialog), 400, 400);
+
+  // get content area
+  GtkWidget *content_area;
+  content_area = gtk_dialog_get_content_area(GTK_DIALOG(input_dialog));
+  
+  // initialize the input entries grid
+  GtkWidget *grid, *entries[ENTRIES_LEN];
+  grid = gtk_grid_new();
+  gtk_container_add(GTK_CONTAINER(content_area), grid);
+  init_entries_grid(grid, entries);
+  
+  // initialize radio buttons box (to center them)
+  GtkWidget *radio_btn_box, *r_buttons[R_BUTTONS_LEN];
+  radio_btn_box = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_container_add(GTK_CONTAINER(content_area), radio_btn_box);
+  init_radio_btns(radio_btn_box, r_buttons);
+  
+  // initialize button box (to center the buttons)
+  GtkWidget *button_box, *buttons[BUTTONS_LEN];
+  button_box = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_container_add(GTK_CONTAINER(content_area), button_box);
+  init_add_dialog_btns(button_box, buttons);
+  
+  struct Submit_ClickData submit_click_data;
+  submit_click_data.data1 = entries;
+  submit_click_data.data2 = r_buttons;
+  submit_click_data.data3 = add_click_data->data2;
+  submit_click_data.data4 = input_dialog;
+  g_signal_connect(buttons[0], "clicked", G_CALLBACK(submit_clicked), &submit_click_data);
+  
+  g_signal_connect(buttons[1], "clicked", G_CALLBACK(cancel_clicked), input_dialog);
+  
+  gtk_widget_show_all(input_dialog);
+  
+  // run dialog
+  gint result = gtk_dialog_run(GTK_DIALOG(input_dialog));
+}
+
+// init report dialog grid (entries)
+void init_report_grid(GtkWidget *grid, gpointer data){
+  gtk_widget_set_halign(grid, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(grid, GTK_ALIGN_CENTER);
+  gtk_widget_set_margin_top(grid, 100);
+  
+  char placeholders[2][50];
+  strcpy(placeholders[0], "From (dd.mm.yyyy)");
+  strcpy(placeholders[1], "To (dd.mm.yyyy)");
+  
+  // create, set and add to grid input entries
+  GtkWidget **entries = (GtkWidget **)data;
+  for(int i = 0; i < 2; i++){
+    entries[i] = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entries[i]), placeholders[i]);
+    gtk_grid_attach(GTK_GRID(grid), entries[i], 1, i + 2, 1, 1);
+  }
+}
+
+// data structure for perform report click
+struct Perform_ClickData{
+  gpointer data1; // grid (parent)
+  gpointer data2; // entries
+  gpointer data3;
+};
+
+// validation for report entries (visually aswell)
+int validate_report_entries(gpointer entry_list, char dates[2][25]){
+  GtkEntry **entries = (GtkEntry **)entry_list;
+  
+  int good = 1;
+  for(int i = 0; i < 2; i++){
+    const gchar *text = gtk_entry_get_text(entries[i]);
+    char *date = strdup(text);
+    int ok = is_date(date);
+    int rgb[3];
+    if(!ok){
+      rgb[0] = 65535, rgb[1] = 0, rgb[2] = 0;
+      good = 0;
+    }
+    else{
+      strcpy(dates[i], date);
+      rgb[0] = 0, rgb[1] = 65535, rgb[2] = 0;
+    }
+    change_fore_color(entries[i], rgb);
+  }
+  
+  return good;
+}
+
+// parser for dd.mm.yyyy to time structure
+struct tm parseDate(char *dateString) {
+    struct tm dateStruct = {0}; // Initialize the struct to zeros
+    
+    sscanf(dateString, "%d.%d.%d", 
+    &dateStruct.tm_mday, &dateStruct.tm_mon, &dateStruct.tm_year);
+    
+    // Adjust the month and year to match the tm struct conventions
+    dateStruct.tm_mon -= 1; // Months are 0-indexed in struct tm
+    dateStruct.tm_year -= 1900; // Years are years since 1900 in struct tm
+
+    return dateStruct;
+}
+
+// check if transaction is in the [date1, date2] time interval
+int is_in_range(struct Transaction transaction, char *date1, char *date2){
+  char date[25];
+  get_date_str(get_Day(transaction), get_Month(transaction), get_Year(transaction), date);
+  
+  struct tm date_check = parseDate(date);
+  struct tm date_start = parseDate(date1);
+  struct tm date_end = parseDate(date2);
+  
+  time_t checkTime = mktime(&date_check);
+  time_t startTime = mktime(&date_start);
+  time_t endTime = mktime(&date_end);
+  
+  return (checkTime >= startTime && checkTime <= endTime);
+}
+  
+// gets transactions in give time range
+int get_transactions_in_range(char *date1, char *date2, struct Transaction res[101]){
+  int k = 0;
+  
+  for(int i = 1; i<=len; i++)
+    if(is_in_range(Transactions[i], date1, date2))
+      res[++k] = Transactions[i];
+      
+  return k;
+}
+
+// perform_clicked event
+void perform_clicked(GtkWidget *button, gpointer data){
+  struct Perform_ClickData *click = (struct Perform_ClickData *)data;
+  
+  char dates[2][25];
+  int validate = validate_report_entries(click->data2, dates);
+  if(validate){
+    struct Transaction tr_in_range[101];
+    int len_in_range = get_transactions_in_range(dates[0], dates[1], tr_in_range);
+    // printf("%d", len_in_range);
+    
+    GtkWidget *content_area = GTK_WIDGET(click->data3);
+    
+    GtkWidget *grid = gtk_grid_new();
+    gtk_container_add(GTK_CONTAINER(content_area), grid);
+    gtk_widget_set_halign(grid, GTK_ALIGN_CENTER);
+    
+    GtkWidget *range_table = load_transaction_list(grid, tr_in_range, len_in_range,1);
+    gtk_widget_show(range_table);
+    gtk_widget_show_all(content_area);
+  }
+}
+
+// opens report dialog
+void open_report_dialog(GtkWidget *button, gpointer data){
+  GtkWidget *window = GTK_WIDGET(data);
+
+  GtkWidget *report_dialog = init_dialog(window);
+  gtk_window_set_title(GTK_WINDOW(report_dialog), "Report Dialog");
+  gtk_window_set_default_size(GTK_WINDOW(report_dialog), 600, 600);
+  
+  GtkWidget *content_area;
+  content_area = gtk_dialog_get_content_area(GTK_DIALOG(report_dialog));
+  
+  GtkWidget *grid, *entries[2];
+  grid = gtk_grid_new();
+  gtk_container_add(GTK_CONTAINER(content_area), grid);  
+  init_report_grid(grid, entries);
+  
+  GtkWidget *l1 = gtk_label_new("");
+  gtk_grid_attach(GTK_GRID(grid), l1, 1, 4, 1, 1);
+  
+  GtkWidget *btnPerform;
+  btnPerform = gtk_button_new_with_label("Perform report");
+  gtk_widget_set_size_request(GTK_WIDGET(btnPerform), 50, 50);
+  gtk_grid_attach(GTK_GRID(grid), btnPerform, 1, 5, 1, 1);
+  
+  GtkWidget *table_grid;
+  table_grid = gtk_grid_new();
+  gtk_container_add(GTK_CONTAINER(content_area), table_grid); 
+  gtk_widget_set_halign(table_grid, GTK_ALIGN_CENTER);
+  
+  struct Perform_ClickData click_data;
+  click_data.data1 = grid;
+  click_data.data2 = entries;
+  click_data.data3 = content_area;
+  g_signal_connect(btnPerform, "clicked", G_CALLBACK(perform_clicked), &click_data);
+  
+  gtk_widget_show_all(report_dialog);
+  
+  // run dialog
+  gint result = gtk_dialog_run(GTK_DIALOG(report_dialog));
+}
+
+// loads buttons for the main window
+void load_buttons(GtkWidget *container, gpointer data){
+  struct Window_Table_ClickData *click_data = (struct Window_Table_ClickData *)data;
+  
+  GtkWidget *window = GTK_WIDGET(click_data->data1);
+  GtkWidget *btnAdd, *btnReport;
+  
+  // creating the buttons
+  btnAdd = gtk_button_new_with_label("Add transaction");
+  gtk_widget_set_size_request(GTK_WIDGET(btnAdd), 50, 50);
+  g_signal_connect(btnAdd, "clicked", G_CALLBACK(open_transaction_add_dialog), data);
+  
+  btnReport = gtk_button_new_with_label("Income-Expenses report");
+  gtk_widget_set_size_request(GTK_WIDGET(btnReport), 50, 50);
+  g_signal_connect(btnReport, "clicked", G_CALLBACK(open_report_dialog), click_data->data1);
+  
+  // empty label (for spacing)
+  GtkWidget *l1;
+  l1 = gtk_label_new("");
+  
+  // adds the buttons to the grid (passed as *container)
+  gtk_grid_attach(GTK_GRID(container), btnAdd, 1, 3, 1, 1);
+  gtk_grid_attach(GTK_GRID(container), l1, 1, 4, 1, 1);
+  gtk_grid_attach(GTK_GRID(container), btnReport, 1, 5, 1, 1);
+}
+
+// no need for comments here
+void on_window_destroy(GtkWidget *widget, gpointer data){  
+  gtk_main_quit();
+}
+
+// main function
+int main(int argc, char **argv){
+
+  gtk_init (&argc, &argv);
+  
+  // init main window
+  GtkWidget *window;
+  window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  gtk_window_set_title(GTK_WINDOW(window), "Welcome");
+  gtk_window_set_default_size(GTK_WINDOW(window), 800, 800);
+  gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
+  gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
+  g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL);
+  
+  // buttons grid
+  GtkWidget *grid = gtk_grid_new();
+  gtk_container_add(GTK_CONTAINER(window), grid);
+  gtk_widget_set_halign(grid, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(grid, GTK_ALIGN_CENTER);
+  
+  // loads controls on main window
+  GtkWidget* tr_table = load_transaction_table(grid);
+  struct Window_Table_ClickData data;
+  data.data1 = window;
+  data.data2 = tr_table;
+  load_buttons(grid, &data);
+  
+  
+  gtk_widget_show_all(window);
+  
+  gtk_main ();
+  
+  return 0;
+} 
